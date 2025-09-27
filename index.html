@@ -1,8 +1,167 @@
-<html>
-  <title>Oliver Ai games</title>
-  <main>
-    <h1>Oliver's AI Games</h1>
-    <a href="page2.html">page2</a>
-    <h2>Hello world</h2>
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Game Hub</title>
+  <style>
+    :root{
+      --bg:#0f172a;        /* slate-900 */
+      --card:#111827;      /* gray-900 */
+      --muted:#94a3b8;     /* slate-400 */
+      --text:#e5e7eb;      /* gray-200 */
+      --accent:#22d3ee;    /* cyan-400 */
+      --accent-2:#06b6d4;  /* cyan-500 */
+      --ring:#f59e0b;      /* amber-500 */
+      --shadow:0 10px 25px rgba(0,0,0,.35);
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 800px at 20% -10%, #13213a 0%, var(--bg) 60%) fixed;
+      color:var(--text);
+      display:flex;
+      flex-direction:column;
+      gap:24px;
+    }
+    header{
+      padding:32px 20px 0;
+      text-align:center;
+    }
+    h1{
+      margin:0 0 6px;
+      letter-spacing:.3px;
+      font-size:clamp(28px, 3vw, 42px);
+    }
+    .sub{
+      margin:0 auto;
+      color:var(--muted);
+      max-width:66ch;
+      font-size:clamp(14px, 1.6vw, 16px);
+    }
+    .grid{
+      width:min(1100px, 92%);
+      margin: 8px auto 0;
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap:18px;
+    }
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:var(--radius);
+      padding:18px;
+      box-shadow: var(--shadow);
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      transition: transform .12s ease, border-color .12s ease;
+    }
+    .card:focus-within, .card:hover{
+      transform: translateY(-2px);
+      border-color: rgba(34, 211, 238, .35);
+    }
+    .title{
+      font-size:18px;
+      margin:0 0 2px;
+    }
+    .desc{
+      margin:0 0 8px;
+      color:var(--muted);
+      min-height:40px;
+      line-height:1.3;
+    }
+    .play{
+      align-self:flex-start;
+      appearance:none;
+      border:none;
+      border-radius:12px;
+      padding:10px 14px;
+      background: linear-gradient(180deg, var(--accent), var(--accent-2));
+      color:#042026;
+      font-weight:700;
+      cursor:pointer;
+      box-shadow: 0 12px 24px rgba(6,182,212,.25);
+      transition: transform .06s ease, box-shadow .12s ease;
+    }
+    .play:hover{ box-shadow: 0 14px 28px rgba(6,182,212,.35) }
+    .play:active{ transform: translateY(1px) }
+    .play:focus-visible{
+      outline: 3px solid var(--ring);
+      outline-offset: 3px;
+    }
+    footer{
+      margin-top:auto;
+      padding:18px 20px 28px;
+      color:var(--muted);
+      text-align:center;
+      font-size:14px;
+    }
+    .small{ font-size:13px; color:#9ca3af }
+    a{ color:var(--accent) }
+    .sr-only{
+      position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Game Hub</h1>
+    <p class="sub">A tiny menu of browser games. Start with <strong>Pong</strong> — add more later by editing one array.</p>
+  </header>
+
+  <main class="grid" id="grid" aria-live="polite" aria-busy="false">
+    <!-- Cards are rendered by JS from GAMES -->
   </main>
+
+  <footer>
+    <div>Tip: From any game, use the in-game menu to return here.</div>
+    <div class="small">No installs. No trackers. Just vanilla HTML/CSS/JS.</div>
+  </footer>
+
+  <script>
+    // Data-driven catalog; extend by adding more entries.
+    const GAMES = [
+      { id: 'pong', title: 'Pong', description: 'Classic paddle game. Keyboard or touch.', href: 'pong.html' },
+      // { id: 'snake', title: 'Snake', description: 'WIP. Eat apples, avoid tail.', href: 'snake.html' },
+    ];
+
+    (function renderCatalog(){
+      const grid = document.getElementById('grid');
+      grid.setAttribute('aria-busy', 'true');
+
+      for (const game of GAMES) {
+        const card = document.createElement('article');
+        card.className = 'card';
+        card.tabIndex = 0;
+        card.setAttribute('role','region');
+        card.setAttribute('aria-labelledby', `title-${game.id}`);
+
+        const h2 = document.createElement('h2');
+        h2.className = 'title';
+        h2.id = `title-${game.id}`;
+        h2.textContent = game.title;
+
+        const p = document.createElement('p');
+        p.className = 'desc';
+        p.textContent = game.description;
+
+        const btn = document.createElement('button');
+        btn.className = 'play';
+        btn.type = 'button';
+        btn.textContent = 'Play';
+        btn.setAttribute('aria-label', `Play ${game.title}`);
+        btn.addEventListener('click', () => { location.href = game.href; });
+
+        card.append(h2, p, btn);
+        grid.appendChild(card);
+      }
+      grid.setAttribute('aria-busy', 'false');
+    })();
+  </script>
+</body>
 </html>

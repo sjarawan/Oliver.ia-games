@@ -1,0 +1,697 @@
+<!-- pong.html (with enhanced sound effects) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Pong</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+    :root{
+      --bg:#0b1020;
+      --ink:#e5e7eb;
+      --muted:#94a3b8;
+      --accent:#22d3ee;
+      --danger:#f87171;
+      --ok:#34d399;
+      --ring:#f59e0b;
+      --radius:14px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background: radial-gradient(1200px 800px at 20% -10%, #0d1933 0%, #070b18 60%) fixed;
+      color:var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      display:flex; flex-direction:column;
+    }
+    header{
+      padding:10px 14px;
+      display:flex; align-items:center; justify-content:space-between;
+      gap:8px;
+    }
+    .title{ font-weight:700; letter-spacing:.3px }
+    .controls{ display:flex; align-items:center; gap:8px }
+    .icon-btn{
+      appearance:none; border:none; cursor:pointer;
+      width:40px; height:40px; border-radius:10px;
+      background:#0c1429; color:var(--ink);
+      display:grid; place-items:center;
+      box-shadow: 0 10px 20px rgba(0,0,0,.35);
+    }
+    .icon-btn:hover{ outline:2px solid rgba(255,255,255,.08) }
+    .icon-btn:focus-visible{ outline:3px solid var(--ring); outline-offset:2px }
+    .pill{
+      border-radius: 999px; padding:8px 12px; font-weight:700; background:#0c1429; color:var(--muted);
+    }
+
+    .wrap{
+      position:relative;
+      width:min(1200px, 96%);
+      margin:8px auto 16px;
+      aspect-ratio: 16 / 9;  /* letterbox container */
+      background:#05070f;
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:var(--radius);
+      overflow:hidden;
+      box-shadow: 0 18px 40px rgba(0,0,0,.5);
+      touch-action: none; /* Critical: block scroll/zoom during play */
+    }
+    canvas{ width:100%; height:100%; display:block; }
+
+    /* On-screen buttons for mobile */
+    .bottom-bar{
+      position:absolute; left:0; right:0; bottom:8px;
+      display:flex; justify-content:center; gap:8px; padding:0 8px;
+      pointer-events:none; /* let buttons enable themselves */
+    }
+    .btn{
+      pointer-events:auto;
+      appearance:none; border:none; cursor:pointer;
+      border-radius:12px; padding:10px 14px; font-weight:700;
+      background: linear-gradient(180deg, var(--accent), #06b6d4);
+      color:#042026;
+      box-shadow: 0 12px 24px rgba(6,182,212,.25);
+    }
+    .btn:focus-visible{ outline:3px solid var(--ring); outline-offset:2px }
+    .btn.secondary{
+      background: linear-gradient(180deg, #cbd5e1, #94a3b8);
+      color:#0b1020;
+    }
+
+    /* Touch drag hint area on left side */
+    .touch-region{
+      position:absolute; inset:0;
+      background: transparent;
+    }
+
+    /* Orientation tip */
+    .tip{
+      position:absolute; left:50%; top:12px; transform:translateX(-50%);
+      font-size:12px; color:var(--muted); background:#0c1429; padding:6px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.06);
+      pointer-events:none;
+    }
+
+    /* End-of-game modal */
+    .modal{
+      position:absolute; inset:0; display:none; place-items:center; backdrop-filter: blur(4px);
+      background: rgba(3,6,12,.55);
+    }
+    .modal[open]{ display:grid }
+    .panel{
+      width:min(460px, 92%);
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:16px;
+      padding:18px;
+      text-align:center;
+      box-shadow: 0 18px 40px rgba(0,0,0,.6);
+    }
+    .panel h2{ margin:6px 0 0 }
+    .panel .muted{ color:var(--muted); margin:6px 0 12px }
+    .row{ display:flex; justify-content:center; gap:10px; flex-wrap:wrap }
+
+    footer{
+      padding:10px 14px 18px;
+      text-align:center;
+      color:var(--muted);
+      font-size:13px;
+    }
+    a{ color:var(--accent) }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title" aria-live="polite">Pong</div>
+    <div class="controls">
+      <span class="pill" id="scoreLabel" aria-live="polite">0 : 0</span>
+      <button class="icon-btn" id="pauseBtn" aria-label="Pause (P)" title="Pause (P)">⏸</button>
+      <button class="icon-btn" id="restartBtn" aria-label="Restart" title="Restart">⟲</button>
+      <button class="icon-btn" id="muteBtn" aria-label="Toggle sound" title="Sound">🔊</button>
+    </div>
+  </header>
+
+  <div class="wrap" id="wrap" aria-label="Game area (drag left side on mobile to move)">
+    <div class="tip" id="tip" aria-hidden="true">Tip: Rotate for wider view — or play as is.</div>
+    <canvas id="game" aria-label="Pong game canvas" role="img"></canvas>
+
+    <!-- Touch control region -->
+    <div class="touch-region" id="touchRegion" aria-hidden="true"></div>
+
+    <!-- On-screen buttons -->
+    <div class="bottom-bar">
+      <button class="btn" id="serveBtn" aria-label="Serve (Space)">Serve</button>
+      <button class="btn secondary" id="pauseBtn2" aria-label="Pause/Resume">Pause</button>
+    </div>
+
+    <!-- End modal -->
+    <div class="modal" id="modal" aria-modal="true" role="dialog" aria-labelledby="resultTitle">
+      <div class="panel">
+        <h2 id="resultTitle">You Win!</h2>
+        <p class="muted" id="resultDetail">Score: 11 – 7</p>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="againBtn" aria-label="Play again">Play Again</button>
+          <a class="btn secondary" href="index.html" aria-label="Back to menu">Back to Menu</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Controls: <strong>W/S</strong> or <strong>↑/↓</strong> to move, <strong>Space</strong> to serve, <strong>P</strong> to pause. On mobile, drag the left side.
+  </footer>
+
+  <script>
+  (() => {
+    "use strict";
+
+    /*** ==================== Constants (tweakable) ===================== ***/
+    const VIRTUAL_W = 800, VIRTUAL_H = 450;     // internal fixed resolution (16:9)
+    const PADDLE_W = 12, PADDLE_H = 72;
+    const BALL_SIZE = 10;
+    const PLAYER_SPEED = 430;                    // px/sec
+    const AI_MAX_SPEED = 360;                    // px/sec
+    const BALL_SPEED_INIT = 290;                 // px/sec
+    const BALL_SPEED_INC = 20;                   // per paddle hit
+    const BALL_SPEED_MAX = 680;
+    const WIN_SCORE = 11;
+    const WIN_BY = 2;
+
+    // Timing: fixed step to avoid tunneling; clamp accumulated dt.
+    const FIXED_DT = 1/120; // 120Hz physics
+    const MAX_FRAME_DT = 0.25;
+
+    /*** ==================== DOM ===================== ***/
+    const wrap = document.getElementById('wrap');
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreLabel = document.getElementById('scoreLabel');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const pauseBtn2 = document.getElementById('pauseBtn2');
+    const restartBtn = document.getElementById('restartBtn');
+    const serveBtn = document.getElementById('serveBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const modal = document.getElementById('modal');
+    const againBtn = document.getElementById('againBtn');
+    const tip = document.getElementById('tip');
+    const touchRegion = document.getElementById('touchRegion');
+
+    /*** ==================== State ===================== ***/
+    const state = {
+      // Viewport mapping
+      view: { x:0, y:0, w:VIRTUAL_W, h:VIRTUAL_H, scale:1 },
+
+      // Entities
+      player: { x: 24, y: VIRTUAL_H/2 - PADDLE_H/2, w:PADDLE_W, h:PADDLE_H, vy:0 },
+      ai:     { x: VIRTUAL_W - 24 - PADDLE_W, y: VIRTUAL_H/2 - PADDLE_H/2, w:PADDLE_W, h:PADDLE_H, vy:0 },
+      ball:   { x: VIRTUAL_W/2, y: VIRTUAL_H/2, w:BALL_SIZE, h:BALL_SIZE, vx:0, vy:0, speed:BALL_SPEED_INIT },
+
+      // Game
+      serving: true,
+      paused: false,
+      scores: { left:0, right:0 },
+      lastHit: null,
+      over: false,
+
+      // Input
+      keys: new Set(),
+      pointerId: null,
+
+      // Audio
+      audio: null,
+      mute: false, // Sounds ON by default; AudioContext starts after first interaction
+      queuedInteraction: false,
+
+      // High score by margin
+      bestMargin: loadHighScore(),
+    };
+
+    /*** ==================== Init / Resize ===================== ***/
+    function init(){
+      // Canvas: use devicePixelRatio for crisp HiDPI rendering
+      resize();
+
+      // Input events
+      window.addEventListener('keydown', onKeyDown, {passive:false});
+      window.addEventListener('keyup', onKeyUp);
+      pauseBtn.addEventListener('click', () => { clickTone(); togglePause(); });
+      pauseBtn2.addEventListener('click', () => { clickTone(); togglePause(); });
+      restartBtn.addEventListener('click', () => { clickTone(); resetMatch(); });
+      serveBtn.addEventListener('click', () => { clickTone(); startServe(true); });
+      againBtn.addEventListener('click', () => { modal.removeAttribute('open'); resetMatch(); });
+
+      // Touch / pointer drag on left half to control player
+      touchRegion.addEventListener('pointerdown', onPointerDown, {passive:false});
+      touchRegion.addEventListener('pointermove', onPointerMove, {passive:false});
+      touchRegion.addEventListener('pointerup', onPointerUp, {passive:false});
+      touchRegion.addEventListener('pointercancel', onPointerUp, {passive:false});
+
+      // Orientation tip visibility
+      updateTip();
+      window.addEventListener('resize', debounce(() => { resize(); updateTip(); }, 120));
+      window.addEventListener('orientationchange', () => setTimeout(() => { resize(); updateTip(); }, 60));
+
+      // Auto-pause on tab hidden
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) state.paused = true;
+      });
+
+      // Audio setup deferred until interaction (autoplay policy)
+      muteBtn.addEventListener('click', () => {
+        state.mute = !state.mute;
+        if (!state.mute && !state.audio) setupAudio();
+        persistMute();
+        renderMuteIcon();
+        clickTone();
+      });
+      renderMuteIcon();
+      restoreMute();
+
+      // Kick off loop
+      lastTime = performance.now();
+      requestAnimationFrame(loop);
+      updateUI();
+      draw(ctx);
+    }
+
+    // Fit virtual 16:9 into wrapper rect, letterbox as needed
+    function resize(){
+      const rect = wrap.getBoundingClientRect();
+      const targetRatio = VIRTUAL_W / VIRTUAL_H;
+      const realRatio = rect.width / rect.height;
+
+      let vw, vh;
+      if (realRatio > targetRatio) {
+        vh = rect.height;
+        vw = vh * targetRatio;
+      } else {
+        vw = rect.width;
+        vh = vw / targetRatio;
+      }
+
+      state.view.scale = vw / VIRTUAL_W;
+      state.view.w = Math.round(VIRTUAL_W * state.view.scale);
+      state.view.h = Math.round(VIRTUAL_H * state.view.scale);
+      state.view.x = Math.round((rect.width - state.view.w) / 2);
+      state.view.y = Math.round((rect.height - state.view.h) / 2);
+
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      canvas.width  = Math.round(state.view.w * dpr);
+      canvas.height = Math.round(state.view.h * dpr);
+      canvas.style.width = state.view.w + 'px';
+      canvas.style.height = state.view.h + 'px';
+      ctx.setTransform(dpr,0,0,dpr,0,0); // account for HiDPI when drawing
+    }
+
+    function updateTip(){
+      const narrow = window.innerWidth < 500;
+      tip.style.display = narrow ? 'block' : 'none';
+    }
+
+    /*** ==================== Input ===================== ***/
+    function onKeyDown(e){
+      if (['ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+      state.keys.add(e.key);
+      if (!state.audio && !state.mute) setupAudio(); // first interaction primes audio
+      if (e.key === 'p' || e.key === 'P') { togglePause(); clickTone(); }
+      if ((e.key === ' ' || e.code === 'Space') && state.serving) startServe(true);
+    }
+    function onKeyUp(e){
+      state.keys.delete(e.key);
+    }
+
+    function onPointerDown(e){
+      // Only start drag on the left half of the viewport region
+      const {left, top} = wrap.getBoundingClientRect();
+      const vx = (e.clientX - left - state.view.x) / state.view.scale;
+      const leftHalf = vx < VIRTUAL_W * 0.55; // generous left side
+      if (!leftHalf) return;
+
+      e.preventDefault();
+      if (!state.audio && !state.mute) setupAudio();
+      state.pointerId = e.pointerId;
+      touchRegion.setPointerCapture(e.pointerId);
+      mapPointerToPaddle(e);
+    }
+
+    function onPointerMove(e){
+      if (state.pointerId !== e.pointerId) return;
+      e.preventDefault();
+      mapPointerToPaddle(e);
+    }
+
+    function onPointerUp(e){
+      if (state.pointerId !== e.pointerId) return;
+      e.preventDefault();
+      state.pointerId = null;
+      state.player.vy = 0;
+    }
+
+    function mapPointerToPaddle(e){
+      const rect = wrap.getBoundingClientRect();
+      const vy = (e.clientY - rect.top - state.view.y) / state.view.scale;
+      // Smoothly move towards pointer position
+      const centerTarget = vy - state.player.h/2;
+      state.player.y = clamp(centerTarget, 0, VIRTUAL_H - state.player.h);
+    }
+
+    function handleInput(dt){
+      // Keyboard vertical movement (W/S or ArrowUp/ArrowDown)
+      let move = 0;
+      if (state.keys.has('w') || state.keys.has('W') || state.keys.has('ArrowUp')) move -= 1;
+      if (state.keys.has('s') || state.keys.has('S') || state.keys.has('ArrowDown')) move += 1;
+      state.player.vy = move * PLAYER_SPEED;
+      state.player.y = clamp(state.player.y + state.player.vy * dt, 0, VIRTUAL_H - state.player.h);
+    }
+
+    /*** ==================== Game Flow ===================== ***/
+    function startServe(withSound=false){
+      if (!state.audio && !state.mute) setupAudio();
+      if (!state.serving) return;
+      state.serving = false;
+      state.paused = false;
+      // Ball from center with random direction toward player (50/50)
+      Object.assign(state.ball, {
+        x: VIRTUAL_W/2 - BALL_SIZE/2,
+        y: VIRTUAL_H/2 - BALL_SIZE/2,
+        speed: BALL_SPEED_INIT
+      });
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      const angle = (Math.random()*0.6 - 0.3); // slight vertical angle
+      state.ball.vx = dir * state.ball.speed * Math.cos(angle);
+      state.ball.vy = state.ball.speed * Math.sin(angle);
+      if (withSound) serveTone();
+    }
+
+    function resetRound(scoredLeft){
+      // Increment score
+      if (scoredLeft) state.scores.left++; else state.scores.right++;
+      updateUI();
+      scoreTone();
+
+      // Check win condition
+      const leftWon = state.scores.left >= WIN_SCORE && (state.scores.left - state.scores.right) >= WIN_BY;
+      const rightWon = state.scores.right >= WIN_SCORE && (state.scores.right - state.scores.left) >= WIN_BY;
+
+      if (leftWon || rightWon){
+        state.over = true;
+        state.paused = true;
+        state.serving = true;
+        const playerWon = leftWon;
+        if (playerWon) saveHighScore(state.scores.left - state.scores.right);
+        showEnd(playerWon);
+        victoryTone(playerWon);
+        return;
+      }
+
+      // Prepare next serve
+      state.serving = true;
+      Object.assign(state.ball, { vx:0, vy:0 });
+    }
+
+    function resetMatch(){
+      state.player.y = VIRTUAL_H/2 - PADDLE_H/2;
+      state.ai.y = VIRTUAL_H/2 - PADDLE_H/2;
+      state.scores.left = 0; state.scores.right = 0;
+      state.serving = true; state.paused = false; state.over = false;
+      Object.assign(state.ball, { x:VIRTUAL_W/2, y:VIRTUAL_H/2, vx:0, vy:0, speed:BALL_SPEED_INIT });
+      updateUI();
+    }
+
+    function showEnd(playerWon){
+      const title = document.getElementById('resultTitle');
+      const detail = document.getElementById('resultDetail');
+      title.textContent = playerWon ? 'You Win!' : 'You Lose';
+      title.style.color = playerWon ? 'var(--ok)' : 'var(--danger)';
+      detail.textContent = `Score: ${state.scores.left} – ${state.scores.right}` +
+                           (playerWon && state.bestMargin ? ` (Best margin: ${state.bestMargin})` : '');
+      modal.setAttribute('open','');
+    }
+
+    /*** ==================== Update & Physics ===================== ***/
+    function update(dt){
+      if (state.paused || state.serving || state.over) return;
+
+      // Player input
+      handleInput(dt);
+
+      // Simple AI: move towards ball Y with capped speed, add prediction lag
+      const aiCenter = state.ai.y + state.ai.h/2;
+      const target = state.ball.y + state.ball.h/2 + (state.ball.vy * 0.08); // tiny lead
+      const diff = clamp(target - aiCenter, -AI_MAX_SPEED, AI_MAX_SPEED);
+      state.ai.y = clamp(state.ai.y + diff * dt, 0, VIRTUAL_H - state.ai.h);
+
+      // Move ball with fixed-step approach (we're already fixed dt, but keep clamp)
+      state.ball.x += state.ball.vx * dt;
+      state.ball.y += state.ball.vy * dt;
+
+      // Collide top/bottom
+      if (state.ball.y <= 0){ state.ball.y = 0; state.ball.vy = Math.abs(state.ball.vy); wallTone(); }
+      if (state.ball.y + state.ball.h >= VIRTUAL_H){ state.ball.y = VIRTUAL_H - state.ball.h; state.ball.vy = -Math.abs(state.ball.vy); wallTone(); }
+
+      // Collide paddles
+      if (aabb(state.ball, state.player) && state.ball.vx < 0){
+        collideWithPaddle(state.player, 1, true);
+      }
+      if (aabb(state.ball, state.ai) && state.ball.vx > 0){
+        collideWithPaddle(state.ai, -1, false);
+      }
+
+      // Scoring
+      if (state.ball.x + state.ball.w < 0){
+        resetRound(false); // right scores
+      } else if (state.ball.x > VIRTUAL_W){
+        resetRound(true);  // left scores
+      }
+    }
+
+    function collideWithPaddle(paddle, dir, isPlayer){
+      // Compute hit offset to add spin
+      const paddleCenter = paddle.y + paddle.h/2;
+      const ballCenter = state.ball.y + state.ball.h/2;
+      const offset = (ballCenter - paddleCenter) / (paddle.h/2); // -1..1
+      const angle = offset * 0.45; // limit deflection
+
+      state.ball.speed = clamp(state.ball.speed + BALL_SPEED_INC, BALL_SPEED_INIT, BALL_SPEED_MAX);
+      const speed = state.ball.speed;
+      state.ball.vx = dir * speed * Math.cos(angle);
+      state.ball.vy = speed * Math.sin(angle);
+      // Slight nudge to avoid re-colliding on next frame
+      state.ball.x = dir > 0 ? paddle.x + paddle.w + 0.5 : paddle.x - state.ball.w - 0.5;
+
+      // Different timbre for player vs AI hits
+      hitTone(isPlayer ? 1.05 : 0.9);
+    }
+
+    /*** ==================== Draw ===================== ***/
+    function draw(ctx){
+      // Clear to black within view
+      ctx.save();
+      ctx.translate(state.view.x, state.view.y);
+      ctx.scale(state.view.scale, state.view.scale);
+
+      // Background field
+      ctx.fillStyle = '#05070f';
+      ctx.fillRect(0,0,VIRTUAL_W,VIRTUAL_H);
+
+      // Midline
+      ctx.strokeStyle = 'rgba(255,255,255,.18)';
+      ctx.setLineDash([8,12]);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(VIRTUAL_W/2, 12);
+      ctx.lineTo(VIRTUAL_W/2, VIRTUAL_H-12);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Scores
+      ctx.fillStyle = 'rgba(255,255,255,.8)';
+      ctx.font = 'bold 32px system-ui, -apple-system, Segoe UI, Roboto';
+      ctx.textAlign = 'center';
+      ctx.fillText(state.scores.left.toString(), VIRTUAL_W*0.25, 40);
+      ctx.fillText(state.scores.right.toString(), VIRTUAL_W*0.75, 40);
+
+      // Paddles & ball
+      ctx.fillStyle = 'white';
+      rect(ctx, state.player);
+      rect(ctx, state.ai);
+      rect(ctx, state.ball);
+
+      // Serving prompt
+      if (state.serving && !state.over){
+        ctx.fillStyle = 'rgba(255,255,255,.8)';
+        ctx.font = '600 20px system-ui, -apple-system, Segoe UI, Roboto';
+        ctx.fillText('Press Space or tap Serve to start', VIRTUAL_W/2, VIRTUAL_H/2 - 20);
+      }
+
+      // Paused overlay
+      if (state.paused && !state.over){
+        ctx.fillStyle = 'rgba(0,0,0,.35)';
+        ctx.fillRect(0,0,VIRTUAL_W,VIRTUAL_H);
+        ctx.fillStyle = 'rgba(255,255,255,.9)';
+        ctx.font = 'bold 24px system-ui, -apple-system';
+        ctx.fillText('Paused', VIRTUAL_W/2, VIRTUAL_H/2);
+      }
+
+      ctx.restore();
+    }
+
+    /*** ==================== Loop ===================== ***/
+    let lastTime = 0, accum = 0;
+    function loop(now){
+      const dt = Math.min((now - lastTime)/1000, MAX_FRAME_DT);
+      lastTime = now;
+      accum += dt;
+
+      // Fixed-step updates for stability
+      while (accum >= FIXED_DT){
+        update(FIXED_DT);
+        accum -= FIXED_DT;
+      }
+
+      draw(ctx);
+      requestAnimationFrame(loop);
+    }
+
+    /*** ==================== UI / Helpers ===================== ***/
+    function updateUI(){
+      scoreLabel.textContent = `${state.scores.left} : ${state.scores.right}`;
+    }
+
+    function togglePause(){
+      if (state.over) return;
+      state.paused = !state.paused;
+    }
+
+    function aabb(a,b){
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function rect(ctx, r){
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+    }
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    function debounce(fn, ms){
+      let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
+    }
+
+    // Persist mute & best margin
+    function persistMute(){
+      try { localStorage.setItem('pong.muted', state.mute ? '1' : '0'); } catch {}
+    }
+    function restoreMute(){
+      try {
+        const s = localStorage.getItem('pong.muted');
+        if (s === '1') state.mute = true;
+        renderMuteIcon();
+      } catch {}
+    }
+    function saveHighScore(margin){
+      if (!Number.isFinite(margin)) return;
+      if (!state.bestMargin || margin > state.bestMargin){
+        state.bestMargin = margin;
+        try { localStorage.setItem('pong.bestMargin', String(margin)); } catch {}
+      }
+    }
+    function loadHighScore(){
+      try {
+        const v = localStorage.getItem('pong.bestMargin');
+        const n = v == null ? null : Number(v);
+        return Number.isFinite(n) ? n : null;
+      } catch { return null; }
+    }
+
+    /*** ==================== Audio (enhanced bleeps) ===================== ***/
+    // Minimal synth using Web Audio API. No external assets.
+    function setupAudio(){
+      try {
+        state.audio = new (window.AudioContext || window.webkitAudioContext)();
+      } catch {}
+    }
+
+    function envGain(ctxA, t0, attack=0.005, decay=0.08, peak=0.2){
+      const g = ctxA.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + decay);
+      return g;
+    }
+
+    function beep(freq=440, dur=0.1, type='square', gain=0.15, pitchSlide=0){
+      if (state.mute || !state.audio) return;
+      const a = state.audio;
+      const t0 = a.currentTime + 0.005;
+      const osc = a.createOscillator();
+      osc.type = type;
+      const g = envGain(a, t0, 0.004, Math.max(0.05, dur), gain);
+      osc.frequency.setValueAtTime(freq, t0);
+      if (pitchSlide) {
+        osc.frequency.linearRampToValueAtTime(freq + pitchSlide, t0 + dur * 0.9);
+      }
+      osc.connect(g).connect(a.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+    }
+
+    function noiseBurst(dur=0.05, gain=0.06){
+      if (state.mute || !state.audio) return;
+      const a = state.audio;
+      const t0 = a.currentTime + 0.005;
+      const buffer = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i=0;i<data.length;i++) data[i] = Math.random()*2-1;
+      const src = a.createBufferSource();
+      src.buffer = buffer;
+      const g = envGain(a, t0, 0.004, dur, gain);
+      src.connect(g).connect(a.destination);
+      src.start(t0);
+    }
+
+    // Sound themes
+    function hitTone(power=1){
+      // Paddle hit: short square + tiny noise
+      beep(260*power, 0.06, 'square', 0.09);
+      noiseBurst(0.03, 0.03);
+    }
+    function wallTone(){
+      // Wall bounce: higher blip
+      beep(520, 0.045, 'triangle', 0.06);
+    }
+    function scoreTone(){
+      // Score event: falling chirp
+      beep(440, 0.16, 'sawtooth', 0.08, -220);
+      noiseBurst(0.04, 0.02);
+    }
+    function serveTone(){
+      // Serve: quick upbeat double
+      beep(600, 0.05, 'square', 0.07);
+      setTimeout(()=>beep(760, 0.05, 'square', 0.07), 65);
+    }
+    function victoryTone(won){
+      if (state.mute || !state.audio) return;
+      // Simple 3-note jingle on win, sad tone on lose
+      if (won){
+        setTimeout(()=>beep(523.25, 0.12, 'triangle', 0.1), 40);   // C5
+        setTimeout(()=>beep(659.25, 0.12, 'triangle', 0.1), 180);  // E5
+        setTimeout(()=>beep(783.99, 0.18, 'triangle', 0.1), 340);  // G5
+      } else {
+        beep(220, 0.25, 'sawtooth', 0.08, -60);
+      }
+    }
+    function clickTone(){
+      beep(720, 0.035, 'square', 0.06);
+    }
+
+    function renderMuteIcon(){
+      muteBtn.textContent = state.mute ? '🔇' : '🔊';
+      muteBtn.title = state.mute ? 'Sound off' : 'Sound on';
+      muteBtn.setAttribute('aria-label', muteBtn.title);
+    }
+
+    /*** ==================== Boot ===================== ***/
+    init();
+  })();
+  </script>
+</body>
+</html>
