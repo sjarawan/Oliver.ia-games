@@ -1,0 +1,531 @@
+<!-- doodle-jump.html (FIXED higher jump + tuned physics) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Doodle Jump</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+    :root{
+      --bg:#0b1020; --ink:#e5e7eb; --muted:#94a3b8; --accent:#22d3ee; --danger:#f87171; --ok:#34d399; --ring:#f59e0b; --radius:14px;
+      --field:#05070f; --platform:#a6adbb; --moving:#93c5fd; --break:#fca5a5; --spring:#f43f5e; --jetpack:#f59e0b;
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{
+      margin:0; background: radial-gradient(1200px 800px at 20% -10%, #0d1933 0%, #070b18 60%) fixed; color:var(--ink);
+      font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial; display:flex; flex-direction:column;
+    }
+    header{ padding:10px 14px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .title{ font-weight:700; letter-spacing:.3px }
+    .controls{ display:flex; align-items:center; gap:8px }
+    .icon-btn{
+      appearance:none; border:none; cursor:pointer; width:40px; height:40px; border-radius:10px;
+      background:#0c1429; color:var(--ink); display:grid; place-items:center; box-shadow: 0 10px 20px rgba(0,0,0,.35);
+    }
+    .icon-btn:hover{ outline:2px solid rgba(255,255,255,.08) }
+    .icon-btn:focus-visible{ outline:3px solid var(--ring); outline-offset:2px }
+    .pill{ border-radius:999px; padding:8px 12px; font-weight:700; background:#0c1429; color:var(--muted); }
+
+    .wrap{
+      position:relative; width:min(1200px,96%); margin:8px auto 16px; aspect-ratio:16/9; background:#05070f;
+      border:1px solid rgba(255,255,255,.06); border-radius:var(--radius); overflow:hidden; box-shadow:0 18px 40px rgba(0,0,0,.5);
+      touch-action:none; /* prevent scroll during play */
+    }
+    canvas{ width:100%; height:100%; display:block; }
+
+    /* Touch controls: left/right at bottom-left, jump is automatic */
+    .touch-col{
+      position:absolute; left:12px; bottom:12px; display:flex; flex-direction:column; gap:10px; pointer-events:auto;
+      opacity:.7; transition:opacity .12s ease;
+    }
+    .touch-col:hover,.touch-col:has(button:active){ opacity:1 }
+    .touch-btn{
+      width:56px; height:56px; border-radius:14px; border:none; background:#0c1429; color:#e5e7eb; font-weight:900;
+      box-shadow: 0 10px 20px rgba(0,0,0,.35);
+    }
+    .touch-btn:focus-visible{ outline:3px solid var(--ring); outline-offset:2px }
+
+    .bottom-bar{
+      position:absolute; left:0; right:0; bottom:8px; display:flex; justify-content:center; gap:8px; padding:0 8px; pointer-events:none;
+    }
+    .btn{ pointer-events:auto; appearance:none; border:none; cursor:pointer; border-radius:12px; padding:10px 14px; font-weight:700;
+      background:linear-gradient(180deg,var(--accent),#06b6d4); color:#042026; box-shadow:0 12px 24px rgba(6,182,212,.25); }
+    .btn.secondary{ background:linear-gradient(180deg,#cbd5e1,#94a3b8); color:#0b1020; }
+    .btn:focus-visible{ outline:3px solid var(--ring); outline-offset:2px }
+
+    .tip{
+      position:absolute; left:50%; top:12px; transform:translateX(-50%);
+      font-size:12px; color:var(--muted); background:#0c1429; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.06);
+      pointer-events:none;
+    }
+
+    .modal{ position:absolute; inset:0; display:none; place-items:center; backdrop-filter: blur(4px); background: rgba(3,6,12,.55); }
+    .modal[open]{ display:grid }
+    .panel{
+      width:min(460px,92%); background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:18px; text-align:center; box-shadow:0 18px 40px rgba(0,0,0,.6);
+    }
+    .panel h2{ margin:6px 0 0 } .panel .muted{ color:var(--muted); margin:6px 0 12px }
+    .row{ display:flex; justify-content:center; gap:10px; flex-wrap:wrap }
+
+    footer{ padding:10px 14px 18px; text-align:center; color:var(--muted); font-size:13px; }
+    a{ color:var(--accent) }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title" aria-live="polite">Doodle Jump</div>
+    <div class="controls">
+      <span class="pill" id="hud" aria-live="polite">Score 0 • Best 0</span>
+      <button class="icon-btn" id="pauseBtn"   aria-label="Pause (P)" title="Pause (P)">⏸</button>
+      <button class="icon-btn" id="restartBtn" aria-label="Restart"   title="Restart">⟲</button>
+      <button class="icon-btn" id="muteBtn"    aria-label="Toggle sound" title="Sound">🔊</button>
+    </div>
+  </header>
+
+  <div class="wrap" id="wrap" aria-label="Game area">
+    <div class="tip" id="tip" aria-hidden="true">Tip: Use ←/→ (or A/D) or the on-screen arrows. Jumps are automatic.</div>
+    <canvas id="game" aria-label="Doodle Jump canvas" role="img"></canvas>
+
+    <!-- Touch controls -->
+    <div class="touch-col" role="group" aria-label="Move controls">
+      <button id="leftBtn"  class="touch-btn" aria-label="Move left">⟸</button>
+      <button id="rightBtn" class="touch-btn" aria-label="Move right">⟹</button>
+    </div>
+
+    <div class="bottom-bar">
+      <button class="btn" id="startBtn"  aria-label="Start (Space)">Start</button>
+      <button class="btn secondary" id="pauseBtn2" aria-label="Pause/Resume">Pause</button>
+    </div>
+
+    <!-- End modal -->
+    <div class="modal" id="modal" aria-modal="true" role="dialog" aria-labelledby="resultTitle">
+      <div class="panel">
+        <h2 id="resultTitle">Game Over</h2>
+        <p class="muted" id="resultDetail">Score: 0</p>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="againBtn" aria-label="Play again">Play Again</button>
+          <a class="btn secondary" href="index.html" aria-label="Back to menu">Back to Menu</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Controls: <strong>←/→</strong> or <strong>A/D</strong> to move. <strong>Space</strong> to start, <strong>P</strong> to pause.  
+    Mobile: left/right buttons. Jumps happen automatically when you land.
+  </footer>
+
+  <script>
+  (()=>{"use strict";
+
+  /** =================== Constants (tuned for higher jumps) =================== **/
+  const VIRTUAL_W=800, VIRTUAL_H=450;
+  // Physics: more lift, slightly gentler gravity
+  const GRAVITY=1350;                // was 1500
+  const JUMP_VEL= -820;              // was -650 (much higher bounce)
+  const MOVE_ACC=1600;
+  const MOVE_MAX=360;
+  const FRICTION=0.0008;
+  const WRAP_MARGIN=30;
+
+  // Platform config (slightly tighter spacing so chains feel fair)
+  const PLAT_W_MIN=70, PLAT_W_MAX=140;
+  const PLAT_H=12;
+  const GAP_MIN=48, GAP_MAX=82;      // was 52..90
+
+  const MOVING_CHANCE=0.18;
+  const SPRING_CHANCE=0.16;
+  const BREAK_CHANCE=0.12;
+
+  // Power-ups
+  const SPRING_MULT=2.1;             // was 1.8
+  const JETPACK_SPEED=-1000;         // was -900
+  const JETPACK_TIME=2.2;
+  const JETPACK_CHANCE=0.09;
+
+  /** =================== DOM =================== **/
+  const wrap=document.getElementById('wrap');
+  const canvas=document.getElementById('game'); const ctx=canvas.getContext('2d');
+  const tip=document.getElementById('tip');
+  const hud=document.getElementById('hud');
+  const pauseBtn=document.getElementById('pauseBtn'); const pauseBtn2=document.getElementById('pauseBtn2');
+  const restartBtn=document.getElementById('restartBtn'); const startBtn=document.getElementById('startBtn');
+  const modal=document.getElementById('modal'); const againBtn=document.getElementById('againBtn');
+  const leftBtn=document.getElementById('leftBtn'); const rightBtn=document.getElementById('rightBtn');
+  const muteBtn=document.getElementById('muteBtn');
+
+  /** =================== State =================== **/
+  const state={
+    view:{x:0,y:0,w:VIRTUAL_W,h:VIRTUAL_H,scale:1},
+    running:false, paused:false, over:false,
+    score:0, best: loadBest() ?? 0,
+
+    camY:0,
+
+    player:{ x:VIRTUAL_W/2-18, y:VIRTUAL_H-100, w:36, h:48, vx:0, vy:0, jetTime:0 },
+
+    platforms:[], highestY: VIRTUAL_H, nextGenY: VIRTUAL_H,
+    jetpacks:[], particles:[],
+
+    keys:new Set(), holdLeft:false, holdRight:false,
+
+    last: performance.now(),
+
+    audio:null, unlocked:false, mute:false,
+  };
+
+  /** =================== Init =================== **/
+  function init(){
+    resize();
+    buildInitialWorld();
+
+    // Input
+    window.addEventListener('keydown', onKeyDown, {passive:false});
+    window.addEventListener('keyup', e=>state.keys.delete(e.key));
+    startBtn.addEventListener('click', ()=>{ clickTone(); start(); });
+    pauseBtn.addEventListener('click', ()=>{ clickTone(); togglePause(); });
+    pauseBtn2.addEventListener('click', ()=>{ clickTone(); togglePause(); });
+    restartBtn.addEventListener('click', ()=>{ clickTone(); newGame(); });
+    againBtn.addEventListener('click', ()=>{ modal.removeAttribute('open'); newGame(); });
+
+    leftBtn.addEventListener('pointerdown', ()=>state.holdLeft=true);
+    leftBtn.addEventListener('pointerup',   ()=>state.holdLeft=false);
+    rightBtn.addEventListener('pointerdown',()=>state.holdRight=true);
+    rightBtn.addEventListener('pointerup',  ()=>state.holdRight=false);
+
+    updateTip();
+    window.addEventListener('resize', debounce(()=>{ resize(); updateTip(); },120));
+    window.addEventListener('orientationchange', ()=>setTimeout(()=>{ resize(); updateTip(); },60));
+    document.addEventListener('visibilitychange', ()=>{ if (document.hidden) state.paused=true; else resumeAudio(); });
+
+    // Robust audio unlock
+    const unlock=()=>ensureAudioReady(true);
+    document.addEventListener('pointerdown', unlock, {once:true, capture:true});
+    document.addEventListener('keydown', unlock, {once:true, capture:true});
+    document.addEventListener('click', unlock, {once:true, capture:true});
+    restoreMute(); renderMute(); muteBtn.addEventListener('click',()=>{ state.mute=!state.mute; if(!state.mute) ensureAudioReady(true); saveMute(); renderMute(); clickTone(); });
+
+    requestAnimationFrame(loop);
+    draw();
+    updateHUD();
+  }
+
+  function newGame(){
+    state.running=false; state.paused=false; state.over=false;
+    state.score=0; state.camY=0; state.jetpacks.length=0; state.particles.length=0;
+    state.player.x=VIRTUAL_W/2-18; state.player.y=VIRTUAL_H-100; state.player.vx=0; state.player.vy=0; state.player.jetTime=0;
+    buildInitialWorld();
+    updateHUD();
+  }
+
+  function start(){ if (state.over) return; state.running=true; state.paused=false; startTone(); }
+
+  /** =================== World Gen =================== **/
+  function buildInitialWorld(){
+    state.platforms.length=0;
+    addPlatform(VIRTUAL_W/2-80, VIRTUAL_H-40, 160, 'normal', false);
+    state.nextGenY = VIRTUAL_H-120;
+    while (state.nextGenY > -VIRTUAL_H){
+      generateNextRow();
+    }
+  }
+
+  function generateNextRow(){
+    const gap = rand(GAP_MIN, GAP_MAX);
+    state.nextGenY -= gap; // move upward
+    const y = state.nextGenY;
+
+    const w = rand(PLAT_W_MIN, PLAT_W_MAX);
+    const x = rand(10, VIRTUAL_W - w - 10);
+
+    const moving = Math.random() < MOVING_CHANCE;
+    const type = moving ? 'moving' : (Math.random() < BREAK_CHANCE ? 'break' : 'normal');
+    const hasSpring = Math.random() < SPRING_CHANCE;
+    addPlatform(x, y, w, type, hasSpring);
+
+    if (Math.random() < JETPACK_CHANCE){
+      state.jetpacks.push({ x: rand(20, VIRTUAL_W-38), y: y-20, w:18, h:24, vy: 20*Math.random()+10 });
+    }
+  }
+
+  function addPlatform(x,y,w,type='normal', spring=false){
+    state.platforms.push({
+      x, y, w, h:PLAT_H, type, spring,
+      vx: type==='moving'? (Math.random()<0.5?-80:80) : 0,
+      alive:true, broken:false,
+    });
+  }
+
+  /** =================== Input =================== **/
+  function onKeyDown(e){
+    if (['ArrowLeft','ArrowRight',' ','a','A','d','D'].includes(e.key)) e.preventDefault();
+    state.keys.add(e.key);
+    ensureAudioReady();
+    if (e.key===' ' || e.code==='Space'){ start(); }
+    if (e.key==='p' || e.key==='P'){ togglePause(); clickTone(); }
+  }
+  function togglePause(){ if (state.running && !state.over) state.paused=!state.paused; }
+
+  /** =================== Loop =================== **/
+  function loop(now){
+    const dt=Math.min((now - state.last)/1000, 0.25); state.last=now;
+    if (state.running && !state.paused && !state.over){
+      update(dt);
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  /** =================== Update =================== **/
+  function update(dt){
+    const p=state.player;
+
+    // Horizontal control
+    const left = state.holdLeft || state.keys.has('ArrowLeft') || state.keys.has('a') || state.keys.has('A');
+    const right= state.holdRight|| state.keys.has('ArrowRight')|| state.keys.has('d') || state.keys.has('D');
+    const ax = (right?1:0) - (left?1:0);
+    p.vx += ax * MOVE_ACC * dt;
+
+    if (ax===0){
+      const s = Math.sign(p.vx); p.vx = Math.abs(p.vx) < 1 ? 0 : p.vx - s * MOVE_MAX * FRICTION * (dt*1000);
+    }
+    p.vx = clamp(p.vx, -MOVE_MAX, MOVE_MAX);
+    p.x += p.vx * dt;
+
+    // Wrap-around
+    if (p.x < -WRAP_MARGIN) p.x = VIRTUAL_W - WRAP_MARGIN;
+    if (p.x + p.w > VIRTUAL_W + WRAP_MARGIN) p.x = -p.w + WRAP_MARGIN;
+
+    // Vertical physics
+    if (p.jetTime > 0){
+      p.jetTime -= dt;
+      p.vy = JETPACK_SPEED;
+      state.particles.push({x:p.x+p.w*0.5, y:p.y+p.h, life:0.25, vx:(Math.random()*40-20), vy:80+Math.random()*40});
+      if (p.jetTime<=0) jetpackEndTone();
+    } else {
+      p.vy += GRAVITY * dt;
+    }
+    p.y += p.vy * dt;
+
+    // Moving platforms
+    for (const pl of state.platforms){
+      if (pl.vx){
+        pl.x += pl.vx * dt;
+        if (pl.x < 6 || pl.x+pl.w > VIRTUAL_W-6) pl.vx *= -1;
+      }
+    }
+
+    // Jetpack pickups bob (subtle)
+    for (const j of state.jetpacks){
+      j.y += Math.sin(performance.now()/500 + j.x)*0.2;
+    }
+
+    // Collision with platforms (only when falling)
+    if (p.vy > 0 && p.jetTime<=0){
+      for (const pl of state.platforms){
+        if (!pl.alive) continue;
+        const prevBottom = p.y - p.vy*dt + p.h;
+        const currBottom = p.y + p.h;
+        const top = pl.y;
+        const horizontal = (p.x + p.w*0.1) < (pl.x + pl.w) && (p.x + p.w*0.9) > pl.x;
+        if (horizontal && prevBottom <= top && currBottom >= top){
+          // Landed
+          let mult=1;
+          if (pl.type==='break'){
+            if (!pl.broken){ pl.broken=true; pl.alive=false; breakTone(); }
+            mult=0.9; // was 0.8 — slightly higher bounce so chains stay reachable
+          }
+          if (pl.spring){ mult=SPRING_MULT; springTone(); }
+          bounce(mult);
+          p.y = top - p.h;
+          break;
+        }
+      }
+    }
+
+    // Collect jetpack
+    for (let i=state.jetpacks.length-1;i>=0;i--){
+      const j=state.jetpacks[i];
+      if (aabb({x:p.x,y:p.y,w:p.w,h:p.h}, j)){
+        state.jetpacks.splice(i,1);
+        p.jetTime = JETPACK_TIME;
+        jetpackTone();
+        break;
+      }
+    }
+
+    // Particles
+    for (const part of state.particles){
+      part.life -= dt;
+      part.x += part.vx*dt;
+      part.y += part.vy*dt;
+    }
+    state.particles = state.particles.filter(pt=>pt.life>0);
+
+    // Camera follow up
+    const targetCam = Math.min(state.camY, p.y - VIRTUAL_H*0.35);
+    state.camY = Math.min(state.camY, targetCam);
+    const s = Math.max(0, Math.floor(-state.camY));
+    if (s !== state.score){ state.score = s; updateHUD(); }
+
+    // Generate/cull
+    while (state.nextGenY > state.camY - 100){ generateNextRow(); }
+    const cullY = state.camY + VIRTUAL_H + 80;
+    state.platforms = state.platforms.filter(pl=> pl.y < cullY);
+    state.jetpacks  = state.jetpacks.filter(j=> j.y < cullY);
+
+    // Death
+    if (p.y - state.camY > VIRTUAL_H + 40){
+      gameOver();
+    }
+  }
+
+  function bounce(mult=1){
+    const p=state.player;
+    p.vy = JUMP_VEL * mult;
+    p.jetTime = Math.max(0, p.jetTime);
+    jumpTone(mult);
+  }
+
+  /** =================== Draw =================== **/
+  function draw(){
+    ctx.save(); ctx.translate(state.view.x, state.view.y); ctx.scale(state.view.scale, state.view.scale);
+
+    // Background
+    ctx.fillStyle='#05070f'; ctx.fillRect(0,0,VIRTUAL_W,VIRTUAL_H);
+
+    // Subtle stars
+    ctx.fillStyle='rgba(255,255,255,.08)';
+    for(let i=0;i<60;i++){ const x=(i*91)%VIRTUAL_W, y=((i*73) - state.camY*0.2)%VIRTUAL_H; ctx.fillRect(x,y,1,1); }
+
+    // Platforms
+    for (const pl of state.platforms){
+      const y = pl.y - state.camY;
+      if (y>VIRTUAL_H || y<-40) continue;
+      if (pl.type==='moving') ctx.fillStyle=getCSS('--moving','#93c5fd');
+      else if (pl.type==='break') ctx.fillStyle=getCSS('--break','#fca5a5');
+      else ctx.fillStyle=getCSS('--platform','#a6adbb');
+      roundRect(ctx, pl.x, y, pl.w, pl.h, 4);
+      if (pl.spring){
+        ctx.fillStyle=getCSS('--spring','#f43f5e');
+        ctx.fillRect(pl.x+pl.w*0.5-6, y-8, 12, 8);
+      }
+    }
+
+    // Jetpacks
+    for (const j of state.jetpacks){
+      const y=j.y - state.camY;
+      if (y>VIRTUAL_H || y<-40) continue;
+      ctx.fillStyle=getCSS('--jetpack','#f59e0b');
+      roundRect(ctx, j.x, y, j.w, j.h, 4);
+      ctx.fillStyle='#0b1020';
+      ctx.fillRect(j.x+4, y+5, j.w-8, 6);
+      ctx.fillRect(j.x+6, y+14, j.w-12, 4);
+    }
+
+    // Particles (jetpack)
+    for (const pt of state.particles){
+      const y=pt.y - state.camY;
+      ctx.globalAlpha = Math.max(0, pt.life*3);
+      ctx.fillStyle='#22d3ee';
+      ctx.fillRect(pt.x-2, y-2, 4, 4);
+      ctx.globalAlpha = 1;
+    }
+
+    // Player
+    const p=state.player, py=p.y - state.camY;
+    ctx.fillStyle='#e5e7eb';
+    roundRect(ctx, p.x, py, p.w, p.h, 8);
+    ctx.fillStyle='#0b1020'; ctx.fillRect(p.x+8, py+14, 6,6); ctx.fillRect(p.x+p.w-14, py+14, 6,6);
+    if (p.jetTime>0){
+      ctx.fillStyle='#22d3ee';
+      ctx.beginPath(); ctx.moveTo(p.x+p.w*0.5, py+p.h);
+      ctx.lineTo(p.x+p.w*0.5-8, py+p.h+18);
+      ctx.lineTo(p.x+p.w*0.5+8, py+p.h+18);
+      ctx.closePath(); ctx.fill();
+    }
+
+    if (!state.running && !state.over) overlayText('Press Space or tap Start');
+    if (state.paused && !state.over)   overlayText('Paused');
+
+    ctx.restore();
+  }
+
+  function overlayText(t){
+    ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,VIRTUAL_W,VIRTUAL_H);
+    ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='bold 24px system-ui,-apple-system';
+    ctx.textAlign='center'; ctx.fillText(t, VIRTUAL_W/2, VIRTUAL_H/2);
+  }
+
+  function roundRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath(); ctx.fill();
+  }
+
+  /** =================== End / HUD =================== **/
+  function gameOver(){
+    state.over=true; state.running=false; state.paused=false;
+    if (state.score > state.best){ state.best=state.score; saveBest(state.best); }
+    document.getElementById('resultDetail').textContent=`Score: ${state.score} • Best: ${state.best}`;
+    modal.setAttribute('open','');
+    loseTone();
+  }
+  function updateHUD(){ hud.textContent=`Score ${state.score} • Best ${state.best}`; }
+
+  /** =================== Layout / Utils =================== **/
+  function resize(){
+    const rect=wrap.getBoundingClientRect();
+    const target=VIRTUAL_W/VIRTUAL_H, actual=rect.width/rect.height;
+    let vw,vh; if(actual>target){ vh=rect.height; vw=vh*target; } else { vw=rect.width; vh=vw/target; }
+    state.view.scale=vw/VIRTUAL_W; state.view.w=Math.round(VIRTUAL_W*state.view.scale); state.view.h=Math.round(VIRTUAL_H*state.view.scale);
+    state.view.x=Math.round((rect.width - state.view.w)/2); state.view.y=Math.round((rect.height - state.view.h)/2);
+    const dpr=Math.max(1,window.devicePixelRatio||1); canvas.width=Math.round(state.view.w*dpr); canvas.height=Math.round(state.view.h*dpr);
+    canvas.style.width=state.view.w+'px'; canvas.style.height=state.view.h+'px'; ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function updateTip(){ tip.style.display = window.innerWidth<500 ? 'block' : 'none'; }
+
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const aabb=(a,b)=>a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y;
+  const rand=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+  function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+  function getCSS(name,fb){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fb; }
+
+  // Storage
+  function loadBest(){ try{ const v=localStorage.getItem('doodle.best'); return v==null?null:Number(v);}catch{return null} }
+  function saveBest(v){ try{ localStorage.setItem('doodle.best', String(v)); }catch{} }
+  function saveMute(){ try{ localStorage.setItem('doodle.muted', state.mute?'1':'0'); }catch{} }
+  function restoreMute(){ try{ const s=localStorage.getItem('doodle.muted'); if(s==='1') state.mute=true; }catch{} }
+  function renderMute(){ muteBtn.textContent = state.mute ? '🔇' : '🔊'; muteBtn.title = state.mute ? 'Sound off' : 'Sound on'; muteBtn.setAttribute('aria-label', muteBtn.title); }
+
+  /** =================== Audio (robust unlock) =================== **/
+  function ensureAudioReady(playTest=false){ if(state.mute) return; if(!state.audio) setupAudio(); resumeAudio(); if(playTest) setTimeout(()=>clickTone(),10); }
+  function setupAudio(){ try{ state.audio=new (window.AudioContext||window.webkitAudioContext)(); state.unlocked = state.audio.state==='running'; primeSilent(); }catch{} }
+  function resumeAudio(){ if(!state.audio) return; if(state.audio.state==='suspended'){ state.audio.resume().then(()=>state.unlocked=true).catch(()=>{}); } else state.unlocked=true; }
+  function primeSilent(){ if(!state.audio) return; const a=state.audio, b=a.createBuffer(1,128,a.sampleRate); const s=a.createBufferSource(); s.buffer=b; const g=a.createGain(); g.gain.value=0.0001; s.connect(g).connect(a.destination); try{s.start(0);}catch{} }
+
+  function env(a,t0,atk=0.004,dec=0.12,peak=0.18){ const g=a.createGain(); g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(peak,t0+atk); g.gain.exponentialRampToValueAtTime(0.0001,t0+atk+dec); return g; }
+  function beep(freq=440,dur=0.1,type='square',gain=0.18,slide=0){ if(state.mute||!state.audio||!state.unlocked) return; const a=state.audio,t0=a.currentTime+0.005,o=a.createOscillator(); o.type=type; const g=env(a,t0,0.004,Math.max(0.06,dur),gain); o.frequency.setValueAtTime(freq,t0); if(slide) o.frequency.linearRampToValueAtTime(freq+slide,t0+dur*0.9); o.connect(g).connect(a.destination); o.start(t0); o.stop(t0+dur+0.02); }
+
+  // Sound palette
+  function clickTone(){ beep(720,0.04,'square',0.16); }
+  function startTone(){ beep(660,0.08,'triangle',0.18); setTimeout(()=>beep(880,0.08,'triangle',0.18),80); }
+  function jumpTone(mult=1){ const f=520*mult; beep(f,0.07,'square',0.18,40); }
+  function springTone(){ beep(820,0.08,'triangle',0.18,80); }
+  function breakTone(){ beep(220,0.12,'sawtooth',0.2,-80); }
+  function jetpackTone(){ beep(600,0.14,'triangle',0.2,140); }
+  function jetpackEndTone(){ beep(440,0.1,'triangle',0.16,-60); }
+  function loseTone(){ beep(220,0.25,'sawtooth',0.22,-120); }
+
+  /** =================== Boot =================== **/
+  init();
+
+  })();
+  </script>
+</body>
+</html>
